@@ -1,0 +1,103 @@
+1️⃣ “Explain the end-to-end flow of a local payment”
+Question
+Explain the complete flow when a local payment is initiated, including all services, databases, and Kafka events involved.
+What SenfoAI should show
+* payments-service → account-service (REST debit)
+* payments-service → Postgres (payments table)
+* Kafka PaymentInitiatedEvent
+* Consumers: notification-service, reporting-service, aml-screening-service
+* Diagram with sync + async boundaries
+
+2️⃣ “Which services are involved in enforcing transaction limits?”
+Question
+Which services participate in transaction limit enforcement, and how is Redis used?
+Expected reasoning
+* payments-service calls limits-service
+* limits-service uses Redis key limits:daily:<customerId>
+* Decision path: allow / reject
+* No Kafka here → pure sync flow
+
+3️⃣ “Show all Kafka producers and consumers across the platform”
+Question
+List all Kafka producers and consumers, the topics they use, and the events they publish or consume.
+Expected output
+* Table or graph like:
+    * payments-service → produces PaymentInitiatedEvent
+    * ledger-service → produces LedgerPostedEvent
+    * notification-service → consumes payments + ledger events
+    * reporting-service → consumes payment events
+    * aml-screening-service → consumes payment events, produces AML result
+* Topic names from demo-bank-common-events
+
+4️⃣ “What happens if AML puts a payment on HOLD?”
+Question
+Describe what happens when AML screening results in a HOLD decision.
+Expected behavior
+* PaymentInitiatedEvent consumed by aml-screening-service
+* Random decision = HOLD
+* AmlScreeningResultEvent published
+* Payment not finalized
+* Diagram showing async wait / decision loop
+
+5️⃣ “Which services write to which databases?”
+Question
+Map each service to the database(s) it writes to and explain why that database was chosen.
+Expected mapping
+Service	Database	Reason
+payments-service	Postgres	transactional state
+account-service	Postgres	balances
+ledger-service	Postgres	financial integrity
+limits-service	Redis	fast counters
+cards-service	MongoDB	event-like docs
+reporting-service	MongoDB	projections
+notification-service	none	stateless
+aml-screening-service	none	stateless
+6️⃣ “Generate a call graph for payments-service”
+Question
+Generate a detailed call graph for the payments-service, including internal methods and external service calls.
+Expected output
+* PaymentsController.localPayment()
+* PaymentsOrchestrator.initiate()
+* PaymentRepository.save()
+* REST call → account-service
+* Kafka send → PaymentInitiatedEvent
+This validates method-level graphing.
+
+7️⃣ “Which services are purely event-driven?”
+Question
+Identify services that are purely event-driven and do not expose business REST APIs.
+Expected answer
+* notification-service
+* reporting-service
+* aml-screening-service
+* Why: Kafka listeners only
+
+8️⃣ “How is eventual consistency achieved in this system?”
+Question
+Explain how eventual consistency is achieved across services in this architecture.
+Expected explanation
+* Write model in payments-service
+* Events propagate state
+* Projections built asynchronously
+* No distributed transactions
+* MongoDB read models lag source of truth
+This tests architectural reasoning, not just code reading.
+
+9️⃣ “Trace a card authorization end-to-end”
+Question
+Trace the complete flow of a card authorization, including storage and events.
+Expected flow
+* cards-service REST /cards/authorize
+* MongoDB save (card_authorizations)
+* Kafka PaymentInitiatedEvent (CARD)
+* Notification + reporting consumers
+* Distinction vs account-based payments
+
+🔟 “Which services would be impacted if Kafka is down?”
+Question
+If Kafka is unavailable, which services will be partially or fully impacted, and why?
+Expected reasoning
+* Payments still writes DB but events fail
+* Notification/reporting/AML stop working
+* Limits + accounts still OK
+* Architecture resilience discussion
